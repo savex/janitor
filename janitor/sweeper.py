@@ -1,6 +1,7 @@
 import re
 
 from time import sleep
+from copy import deepcopy
 from subprocess import Popen, PIPE
 
 from common import logger, logger_cli
@@ -67,7 +68,7 @@ class Sweeper(ConfigFileBase):
             _sweep_cmd = self._config.get(section, _sweep_action_label)
 
             if self._config.has_option(section, "protected_run"):
-                _protected = self._config.get(section,"protected_run")
+                _protected = self._config.get(section, "protected_run")
             else:
                 _protected = self.protected_run_default
 
@@ -84,6 +85,7 @@ class Sweeper(ConfigFileBase):
             _section_dict["data"] = None
             _section_dict["protected_run"] = _protected
             _section_dict["last_rc"] = 0
+            _section_dict["key"] = self._config.get(section, "key")
 
             _section_dict[_sweep_action_label]["cmd"] = _sweep_cmd
             _section_dict[_sweep_action_label]["pool"] = {}
@@ -130,7 +132,6 @@ class Sweeper(ConfigFileBase):
     def get_section_data(self, section):
         return self.sweep_items[section]["data"]
 
-
     @staticmethod
     def _action_process(cmd):
         logger.debug("...cmd: '{}'".format(cmd))
@@ -173,6 +174,8 @@ class Sweeper(ConfigFileBase):
             # save data
             _data = _out.splitlines()
             self.sweep_items[section]["output"] = _data
+            # filter it
+            self.sweep_items[section]["filtered_output"] = self._filter(_data)
 
         return _rc
 
@@ -221,11 +224,9 @@ class Sweeper(ConfigFileBase):
 
         return _rc
 
-    def _do_filter_action(self, section):
-        # filter data set
-        _data = []
-        _raw_data = self.sweep_items[section]["output"]
-        for data_item in _raw_data:
+    def _filter(self, data):
+        _filtered = []
+        for data_item in data:
             logger.debug("About to apply filter for '{}'".format(
                 data_item
             ))
@@ -234,19 +235,13 @@ class Sweeper(ConfigFileBase):
                 logger.debug("..matched value '{}'".format(
                     _filtered_data_item.string
                 ))
-                _data.append(_filtered_data_item.string)
-
-        # save filtered list
-        self.sweep_items[section]["filtered_output"] = _data
-
-        return
+                _filtered.append(deepcopy(_filtered_data_item.string))
+        return _filtered
 
     def _do_serialize_data_action(self, section):
         _dict = {}
 
-        _section_key = self._get_s
-
-
+        _section_key = self._get()
 
         return
 
@@ -307,14 +302,6 @@ class Sweeper(ConfigFileBase):
             self._do_sweep_action,
             section=section,
             item=item
-        )
-
-    def filter_action(self, section=None):
-        # Do filter action according to selected filter
-        logger.info("Filter action started")
-        return self.do_action(
-            self._do_filter_action,
-            section=section
         )
 
     def serialize_data(self, section=None):

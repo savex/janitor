@@ -103,8 +103,6 @@ def sweeper_cli():
             ))
         else:
             _all_output = sweep.get_section_output(_section)
-            # Filter data, override if corresponding parameter is set
-            sweep.filter_action(_section)
             _filtered_output = sweep.get_section_filtered_output(_section)
             _count = len(_filtered_output)
             logger_cli.info("# listed {}, matched {}.".format(
@@ -151,6 +149,5 @@ def sweeper_cli():
 
 # Entry
 if __name__ == '__main__':
-    print "1: {0}, 2: {0}".format("aaa")
     sweeper_cli()
     sys.exit(0)
