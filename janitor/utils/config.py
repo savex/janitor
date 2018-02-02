@@ -19,10 +19,10 @@ class ConfigFileBase(object):
     _truth = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup',
               'certainly', 'uh-huh']
     _config = None
-    _section_name = None
+    _global_section_name = None
 
     def __init__(self, section_name, filepath=None):
-        self._section_name = section_name
+        self._global_section_name = section_name
         self._config = ConfigParser.ConfigParser()
         if filepath is not None:
             self._config.read(self._ensure_abs_path(filepath))
@@ -52,11 +52,17 @@ class ConfigFileBase(object):
         else:
             return False
 
+    def get_safe(self, section, key):
+        if self._config.has_option(section, key):
+            return self._config.get(section, key)
+        else:
+            return None
+
     def get_value(self, key, value_type=None):
         if value_type is not None:
-            return value_type(self._config.get(self._section_name, key))
+            return value_type(self._config.get(self._global_section_name, key))
         else:
-            return self._config.get(self._section_name, key)
+            return self._config.get(self._global_section_name, key)
 
 
 class SweeperConfig(ConfigFileBase):

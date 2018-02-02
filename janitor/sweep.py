@@ -3,7 +3,7 @@ import sys
 import argparse
 
 from common import logger, logger_cli
-from sweeper import Sweeper
+from janitor.sweeper import Sweeper
 
 pkg_dir = os.path.dirname(__file__)
 pkg_dir = os.path.normpath(pkg_dir)
@@ -67,7 +67,7 @@ def sweeper_cli():
 
     parser.add_argument(
         'profile',
-        help="Cleaning profile to execute"
+        help="Action profile to execute"
     )
 
     args = parser.parse_args()
@@ -102,13 +102,13 @@ def sweeper_cli():
                 sweep.get_section_list_error(_section)
             ))
         else:
-            _all_data = sweep.get_section_data(_section)
+            _all_output = sweep.get_section_output(_section)
             # Filter data, override if corresponding parameter is set
             sweep.filter_action(_section)
-            _filtered_data = sweep.get_section_data(_section)
-            _count = len(_filtered_data)
+            _filtered_output = sweep.get_section_filtered_output(_section)
+            _count = len(_filtered_output)
             logger_cli.info("# listed {}, matched {}.".format(
-                len(_all_data),
+                len(_all_output),
                 _count
             ))
 
@@ -116,7 +116,7 @@ def sweeper_cli():
             if args.stat_only:
                 break
             else:
-                for _data_item in _filtered_data:
+                for _data_item in _filtered_output:
                     logger_cli.info("# {}: {}".format(
                         _count,
                         _data_item
@@ -151,5 +151,6 @@ def sweeper_cli():
 
 # Entry
 if __name__ == '__main__':
+    print "1: {0}, 2: {0}".format("aaa")
     sweeper_cli()
     sys.exit(0)

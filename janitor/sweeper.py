@@ -30,9 +30,17 @@ class Sweeper(ConfigFileBase):
         else:
             self.common_filter = re.compile(self.get_value("common_filter"))
 
+        self.banner = self.get_value("banner")
         self.retry_count = self.get_value("retry", value_type=int)
         self.retry_timeout = self.get_value("timeout", value_type=float)
         self.action_concurrency = self.get_value("concurrency", value_type=int)
+
+        self.protected_run_default = self.get_value(
+            "default_protected_run",
+            value_type=bool
+        )
+
+        self.last_return_code = 0
 
         # initialize all sections
         self.sweep_items = {}
@@ -40,34 +48,51 @@ class Sweeper(ConfigFileBase):
         sweep_items_list = self._config.sections()
         sweep_items_list.remove(section_name)
         for sweep_item in sweep_items_list:
-            _item = {}
-            _list_action_cmd = self._config.get(
-                sweep_item,
-                _list_action_label
+            self.sweep_items[sweep_item] = self._get_properties(
+                sweep_item
             )
-            _sweep_action_cmd = self._config.get(
-                sweep_item,
-                _sweep_action_label
-            )
-
-            _item[_list_action_label] = {}
-            _item[_sweep_action_label] = {}
-
-            _item[_list_action_label]["cmd"] = _list_action_cmd
-            _item[_list_action_label]['output'] = None
-            _item[_list_action_label]['error'] = None
-            _item[_list_action_label]['return_code'] = None
-
-            _item['data'] = None
-
-            _item[_sweep_action_label]["cmd"] = _sweep_action_cmd
-            _item[_sweep_action_label]["pool"] = {}
-
-            self.sweep_items[sweep_item] = _item
 
         self.sweep_items_list = sweep_items_list
         if self.presort_sections:
             self.sweep_items_list.sort()
+
+    def _get_properties(self, section):
+        _section_dict = {}
+        action_map = self.get_safe(section, "map")
+        if action_map is None:
+            # No tree parsing, simple dict
+            _section_dict = {}
+
+            _list_cmd = self._config.get(section, _list_action_label)
+            _sweep_cmd = self._config.get(section, _sweep_action_label)
+
+            if self._config.has_option(section, "protected_run"):
+                _protected = self._config.get(section,"protected_run")
+            else:
+                _protected = self.protected_run_default
+
+            _section_dict[_list_action_label] = {}
+            _section_dict[_sweep_action_label] = {}
+
+            _section_dict[_list_action_label]["cmd"] = _list_cmd
+            _section_dict[_list_action_label]["output"] = None
+            _section_dict[_list_action_label]["error"] = None
+            _section_dict[_list_action_label]["return_code"] = None
+
+            _section_dict["output"] = None
+            _section_dict["filtered_output"] = None
+            _section_dict["data"] = None
+            _section_dict["protected_run"] = _protected
+            _section_dict["last_rc"] = 0
+
+            _section_dict[_sweep_action_label]["cmd"] = _sweep_cmd
+            _section_dict[_sweep_action_label]["pool"] = {}
+        else:
+            # Use map to build action tree
+
+            pass
+
+        return _section_dict
 
     @property
     def sections_list(self):
@@ -78,26 +103,33 @@ class Sweeper(ConfigFileBase):
     def _get(self, section, action, item):
         return self.sweep_items[section][action][item]
 
-    def _get_section_pool(self, section):
-        return self._get(section, _sweep_action_label, "pool")
-
-    def get_section_data(self, section):
-        return self.sweep_items[section]["data"]
-
     def get_section_list_error(self, section):
         return self._get(section, _list_action_label, "error")
 
     def get_section_list_cmd(self, section):
         return self._get(section, _list_action_label, "cmd")
 
+    def _get_section_sweep_pool(self, section):
+        return self._get(section, _sweep_action_label, "pool")
+
     def get_section_sweep_output(self, section, data_item):
-        return self._get_section_pool(section)[data_item]["item_output"]
+        return self._get_section_sweep_pool(section)[data_item]["item_output"]
 
     def get_section_sweep_error(self, section, data_item):
-        return self._get_section_pool(section)[data_item]["item_error"]
+        return self._get_section_sweep_pool(section)[data_item]["item_error"]
 
     def get_section_sweep_cmd(self, section, data_item):
-        return self._get_section_pool(section)[data_item]["item_cmd"]
+        return self._get_section_sweep_pool(section)[data_item]["item_cmd"]
+
+    def get_section_output(self, section):
+        return self.sweep_items[section]["output"]
+
+    def get_section_filtered_output(self, section):
+        return self.sweep_items[section]["filtered_output"]
+
+    def get_section_data(self, section):
+        return self.sweep_items[section]["data"]
+
 
     @staticmethod
     def _action_process(cmd):
@@ -140,7 +172,7 @@ class Sweeper(ConfigFileBase):
         else:
             # save data
             _data = _out.splitlines()
-            self.sweep_items[section]["data"] = _data
+            self.sweep_items[section]["output"] = _data
 
         return _rc
 
@@ -159,7 +191,7 @@ class Sweeper(ConfigFileBase):
         _out, _err, _rc = self._action_process(_cmd)
 
         # handle specific RC
-        #_rc = 1
+        # _rc = 1
 
         # if error received, log it and retry
         if _rc != 0:
@@ -180,7 +212,7 @@ class Sweeper(ConfigFileBase):
                 _retry_left -= 1
 
         # store
-        _pool = self._get_section_pool(section)
+        _pool = self._get_section_sweep_pool(section)
         _pool[item] = {}
         _pool[item]["item_cmd"] = _cmd
         _pool[item]["item_output"] = _out
@@ -192,7 +224,7 @@ class Sweeper(ConfigFileBase):
     def _do_filter_action(self, section):
         # filter data set
         _data = []
-        _raw_data = self.sweep_items[section]["data"]
+        _raw_data = self.sweep_items[section]["output"]
         for data_item in _raw_data:
             logger.debug("About to apply filter for '{}'".format(
                 data_item
@@ -205,7 +237,16 @@ class Sweeper(ConfigFileBase):
                 _data.append(_filtered_data_item.string)
 
         # save filtered list
-        self.sweep_items[section]["data"] = _data
+        self.sweep_items[section]["filtered_output"] = _data
+
+        return
+
+    def _do_serialize_data_action(self, section):
+        _dict = {}
+
+        _section_key = self._get_s
+
+
 
         return
 
@@ -220,16 +261,34 @@ class Sweeper(ConfigFileBase):
             # TODO: use gevent to generate subprocess
             for index in range(len(_sections)):
                 _section = _sections[index]
+                # check if it is eligible to execute action
+                if self.sweep_items[_section]["protected"] and \
+                        self.last_return_code != 0:
+                    logger_cli.warn(
+                        "...dropping protected section due to previous error"
+                    )
+                    continue
+                # run action
                 logger.debug("...running action '{}' for section '{}'".format(
                     str(action.__name__),
                     _section
                 ))
                 rc = action(_section, **kwargs)
+                self.sweep_items[_section]["last_rc"] = rc
 
             logger.info("...done")
         else:
+            # check if it is eligible to execute action
+            if self.sweep_items[section]["protected"] and \
+                    self.last_return_code != 0:
+                logger_cli.warn(
+                    "...dropping protected section due to previous error"
+                )
+                return
+
             logger.info("--> {}".format(section))
             rc = action(section, **kwargs)
+            self.sweep_items[section]["last_rc"] = rc
 
         return rc
 
@@ -255,5 +314,13 @@ class Sweeper(ConfigFileBase):
         logger.info("Filter action started")
         return self.do_action(
             self._do_filter_action,
+            section=section
+        )
+
+    def serialize_data(self, section=None):
+        # Serialize data from filtered output to tree
+        logger.info("Extract 'key' data action started")
+        return self.do_action(
+            self._do_serialize_data_action,
             section=section
         )
