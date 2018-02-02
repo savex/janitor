@@ -69,10 +69,12 @@ def setup_loggers(name, def_level=logging.DEBUG, log_fname=None):
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    logger.addHandler(fh)
+    if len(logger.handlers) == 0:
+        logger.addHandler(fh)
 
     logger_cli = logging.getLogger(name + ".cli")
-    logger_cli.addHandler(sh)
     logger_cli.setLevel(logging.DEBUG)
+    if len(logger_cli.handlers) == 0:
+        logger_cli.addHandler(sh)
 
     return logger, logger_cli
