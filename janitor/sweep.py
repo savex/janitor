@@ -4,6 +4,7 @@ import argparse
 
 from common import logger, logger_cli
 from janitor.sweeper import Sweeper
+from utils.exception import SweeperException
 
 pkg_dir = os.path.dirname(__file__)
 pkg_dir = os.path.normpath(pkg_dir)
@@ -87,8 +88,7 @@ def sweeper_cli():
         os.stat(args.profile)
     except os.error:
         logger_cli.error("Profile '{}' not found".format(args.profile))
-        exit(1)
-        return 1
+        sys.exit(1)
 
     # Load profile
     sweep = Sweeper(args.filter_regex, args.profile)
@@ -167,5 +167,9 @@ def sweeper_cli():
 
 # Entry
 if __name__ == '__main__':
-    sweeper_cli()
+    try:
+        sweeper_cli()
+    except SweeperException as err:
+        logger_cli.error("{}".format(err))
+        sys.exit(1)
     sys.exit(0)

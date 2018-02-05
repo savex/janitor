@@ -15,9 +15,15 @@ timeout = 2000
 # concurrency for sweep action, not implemented
 concurrency = 1
 
-# additional script/commands
+# additional script/commands, not implemented
 pre_script = $(export OS_ENDPOINT_TYPE=internal)
 post_script =
+
+# default output format (raw, json)
+default_format_parser = json
+
+# default field for filtering
+default_filter_field = name
 
 # Run next section by default only if all previous was successful
 default_protected_run = False

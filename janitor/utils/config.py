@@ -1,6 +1,8 @@
 import ConfigParser
 import os
 
+from ConfigParser import NoOptionError, NoSectionError
+
 pkg_dir = os.path.dirname(__file__)
 pkg_dir = os.path.join(pkg_dir, os.path.pardir)
 pkg_dir = os.path.normpath(pkg_dir)
@@ -51,6 +53,12 @@ class ConfigFileBase(object):
             return True
         else:
             return False
+
+    def get_with_default(self, section, key, default):
+        try:
+            return self._config.get(section, key)
+        except (NoSectionError, NoOptionError) as e:
+            return default
 
     def get_safe(self, section, key):
         if self._config.has_option(section, key):

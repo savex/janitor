@@ -1,4 +1,5 @@
 import re
+import json
 
 from time import sleep
 from copy import deepcopy
@@ -6,6 +7,7 @@ from subprocess import Popen, PIPE
 
 from common import logger, logger_cli
 from utils.config import ConfigFileBase
+from utils.exception import *
 
 _list_action_label = "list_action"
 _sweep_action_label = "sweep_action"
@@ -32,6 +34,8 @@ class Sweeper(ConfigFileBase):
             self.common_filter = re.compile(self.get_value("common_filter"))
 
         self.banner = self.get_value("banner")
+        self.default_format_parser = self.get_value("default_format_parser")
+        self.default_filter_field = self.get_value("default_filter_field")
         self.retry_count = self.get_value("retry", value_type=int)
         self.retry_timeout = self.get_value("timeout", value_type=float)
         self.action_concurrency = self.get_value("concurrency", value_type=int)
@@ -58,7 +62,9 @@ class Sweeper(ConfigFileBase):
             self.sweep_items_list.sort()
 
     def _get_properties(self, section):
+        # prepare for nested section parsing
         _section_dict = {}
+        # load opton, if nothing is there - None will be returned
         action_map = self.get_safe(section, "map")
         if action_map is None:
             # No tree parsing, simple dict
@@ -67,10 +73,23 @@ class Sweeper(ConfigFileBase):
             _list_cmd = self._config.get(section, _list_action_label)
             _sweep_cmd = self._config.get(section, _sweep_action_label)
 
-            if self._config.has_option(section, "protected_run"):
-                _protected = self._config.get(section, "protected_run")
-            else:
-                _protected = self.protected_run_default
+            _protected = self.get_with_default(
+                section,
+                "protected_run",
+                self.protected_run_default
+            )
+
+            _output_format = self.get_with_default(
+                section,
+                "output_format",
+                self.default_format_parser
+            )
+
+            _filter_field = self.get_with_default(
+                section,
+                "filter_field",
+                self.default_filter_field
+            )
 
             _section_dict[_list_action_label] = {}
             _section_dict[_sweep_action_label] = {}
@@ -81,6 +100,8 @@ class Sweeper(ConfigFileBase):
             _section_dict[_list_action_label]["return_code"] = None
 
             _section_dict["output"] = None
+            _section_dict["output_format"] = _output_format
+            _section_dict["filter_field"] = _filter_field
             _section_dict["filtered_output"] = None
             _section_dict["data"] = None
             _section_dict["protected_run"] = _protected
@@ -91,6 +112,8 @@ class Sweeper(ConfigFileBase):
             _section_dict[_sweep_action_label]["pool"] = {}
         else:
             # Use map to build action tree
+
+            raise SweeperNotImplemented("map")
 
             pass
 
@@ -171,11 +194,21 @@ class Sweeper(ConfigFileBase):
         if _rc != 0:
             logger.debug("Non-zero exit code returned. No data will be saved")
         else:
-            # save data
-            _data = _out.splitlines()
+            # parse data and
+            # filter it according to selected type
+            _data, _filtered = None, None
+            _format = self.sweep_items[section]["output_format"]
+            if _format == "json":
+                _data = json.loads(_out)
+                _filtered = self._filter_json(
+                    _data,
+                    self.sweep_items[section]["filter_field"]
+                )
+            elif _format == "raw":
+                _data = _out.splitlines()
+                _filtered = self._filter_raw(_data)
             self.sweep_items[section]["output"] = _data
-            # filter it
-            self.sweep_items[section]["filtered_output"] = self._filter(_data)
+            self.sweep_items[section]["filtered_output"] = _filtered
 
         return _rc
 
@@ -224,24 +257,55 @@ class Sweeper(ConfigFileBase):
 
         return _rc
 
-    def _filter(self, data):
+    def _do_matching(self, unfiltered):
+        logger.debug("About to apply filter for '{}'".format(unfiltered))
+        _filtered_data_item = self.common_filter.match(unfiltered)
+        if _filtered_data_item is not None:
+            logger.debug("..matched value '{}'".format(
+                _filtered_data_item.string
+            ))
+            return _filtered_data_item.string
+        else:
+            return None
+
+    def _filter_raw(self, data):
         _filtered = []
         for data_item in data:
-            logger.debug("About to apply filter for '{}'".format(
-                data_item
-            ))
-            _filtered_data_item = self.common_filter.match(data_item)
+            _filtered_data_item = self._do_matching(data_item)
             if _filtered_data_item is not None:
-                logger.debug("..matched value '{}'".format(
-                    _filtered_data_item.string
-                ))
-                _filtered.append(deepcopy(_filtered_data_item.string))
+                _filtered.append(deepcopy(_filtered_data_item))
+        return _filtered
+
+    def _filter_json(self, json_data, field):
+        _filtered = []
+        for json_item in json_data:
+            _filtered_data_item = self._do_matching(json_item[field])
+            if _filtered_data_item is not None:
+                _filtered.append(deepcopy(json_item))
         return _filtered
 
     def _do_serialize_data_action(self, section):
         _dict = {}
+        # this function should produce dict of data to be handled by sweep
+        # { "key_field": {
+        #       <filter_field>: "name1",
+        #       <section_child>: {}
+        #    }
+        # }
 
-        _section_key = self._get()
+
+        # Load header if it is set
+        # _lines = self.get_section_output(section)
+        #
+        #
+        # _section_key = self.sweep_items[section]["key"]
+        #
+        # if _section_key == "*":
+        #     _dict[_section_key] = deepcopy(
+        #         self.get_section_filtered_output(section)
+        #     )
+        # elif _section_key
+        #
 
         return
 
