@@ -59,10 +59,19 @@ class ConfigFileBase(object):
             return None
 
     def get_value(self, key, value_type=None):
+        # check  that supplied value is an existing type
+        try:
+            tmp = type(value_type)
+        except Exception as e:
+            raise Exception("Invalid type supplied")
+        # Get value
+        _value = self._config.get(self._global_section_name, key)
+
+        # Return using selected type
         if value_type is not None:
-            return value_type(self._config.get(self._global_section_name, key))
+            return value_type(_value)
         else:
-            return self._config.get(self._global_section_name, key)
+            return _value
 
 
 class SweeperConfig(ConfigFileBase):

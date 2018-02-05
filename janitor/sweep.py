@@ -72,9 +72,27 @@ def sweeper_cli():
 
     args = parser.parse_args()
 
+    # Some info on current config values
+    logger_cli.debug(
+        "Current working folder is: {}".format(
+            os.path.abspath(
+                os.curdir
+            )
+        )
+    )
+    logger_cli.debug("Using profile: '{}'\n".format(args.profile))
+
+    # Check if profile exists
+    try:
+        os.stat(args.profile)
+    except os.error:
+        logger_cli.error("Profile '{}' not found".format(args.profile))
+        exit(1)
+        return 1
+
     # Load profile
     sweep = Sweeper(args.filter_regex, args.profile)
-
+    logger_cli.info("### {}".format(sweep.banner))
     _sections = []
 
     if args.list_sections:

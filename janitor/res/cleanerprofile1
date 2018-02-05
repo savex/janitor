@@ -1,22 +1,70 @@
 [sweeper]
+# Announcement
+banner = "Sample profile to check functionality"
+
 # sort sections before use
 presort_sections = True
+
 # default regex filter
 common_filter = .*.pyc.*$
+
 # retry attempts on failure
 retry = 3
 timeout = 2000
+
 # concurrency for sweep action, not implemented
 concurrency = 1
+
+# additional script/commands
+pre_script = $(export OS_ENDPOINT_TYPE=internal)
+post_script =
+
+# Run next section by default only if all previous was a success
+default_protected_run = False
+
+############
+# [examplesection1]
+# if action_map is set, section pre-builds data tree according to map
+# and links it by selected key. '*' means whole line will be saved as argument
+# Action will follow data tree and execute each action from leaves and up
+# action_map = name1.name2
+# name1_list_action = find . -maxdepth 1 -type d
+# name2_list_action = find . -maxdepth 1 -type f
+# name1_key = *
+# name2_key = *
+# name1_sweep_action = file {}
+# name2_sweep_action = file {}
+
+# bash command to get list of objects to clean, no quotes
+# list_action = find . -maxdepth 1 -type f
+
+# openstack client has table heading, use this to parse data to dict
+# use_column_name = ID
+
+# bash command for action on single object, brackets to mark argument placement
+# use indices if you place same argument multiple times, just like in Python :)
+# sweep_action = file {}
+# sweep_action = file {0}; tail {0}
+############
+
+
 
 [files1]
 # bash command to get list of objects to clean
 list_action = find . -maxdepth 1 -type f
+
+# use whole string as a key
+key = *
+
 # bash command to delete single object, brackets to mark argument placement
 sweep_action= file {}
 
 [folders1]
 # bash command to get list of objects to clean
 list_action = find . -maxdepth 1 -type d
+
+# use whole string as a key
+key = *
+
 # bash command to delete single object, brackets to mark argument placement
 sweep_action= file {}

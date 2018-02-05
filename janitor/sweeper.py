@@ -274,7 +274,7 @@ class Sweeper(ConfigFileBase):
             logger.info("...done")
         else:
             # check if it is eligible to execute action
-            if self.sweep_items[section]["protected"] and \
+            if self.sweep_items[section]["protected_run"] and \
                     self.last_return_code != 0:
                 logger_cli.warn(
                     "...dropping protected section due to previous error"
