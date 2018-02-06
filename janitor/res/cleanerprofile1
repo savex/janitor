@@ -22,6 +22,12 @@ post_script =
 # Run next section by default only if all previous was a success
 default_protected_run = False
 
+# default output format (raw, json)
+default_format_parser = raw
+
+# default field for filtering
+default_filter_field = *
+
 ############
 # [examplesection1]
 # if action_map is set, section pre-builds data tree according to map

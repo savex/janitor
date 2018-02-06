@@ -45,7 +45,7 @@ default_protected_run = False
 # list_action = find . -maxdepth 1 -type f
 
 # openstack client has table heading, use this to parse data to dict
-use_column_name = ID
+key = ID
 
 # bash command for action on single object, brackets to mark argument placement
 # use indices if you place same argument multiple times, just like in Python :)
@@ -53,105 +53,109 @@ use_column_name = ID
 # sweep_action = file {0}; tail {0}
 ############
 
-[Users]
+[01.Users]
 # Remove users
 list_action = openstack user list
 key = ID
 sweep_action = openstack user delete {}
 
-[Roles]
+[02.Roles]
 # Remove roles
 list_action = openstack role list
 key = ID
 sweep_action = openstack role delete {}
 
-[Service]
+[03.Service]
 # Remove services
 list_action = openstack service list
 key = ID
 sweep_action = openstack service delete {}
 
-[Servers]
+[04.Servers]
 # Remove created instances
 list_action = openstack server list --all
 key = ID
 sweep_action = openstack server delete {}
 
-[Snapshots]
+[05.Snapshots]
 # Remove created snapshots
 list_action = cinder snapshot-list --all
 key = ID
 sweep_action = cinder snapshot-reset-state {0}; cinder snapshot-delete {0} --force
 
-[Volumes]
+[06.Volumes]
 # Remove created volumes
 list_action = openstack volume list --all
 key = ID
 sweep_action = cinder reset-state {0}; openstack volume delete {0}
 
-[VolumeTypes]
+[07.VolumeTypes]
 # Remove created volume types
 list_action = cinder type-list
 key = ID
 sweep_action = cinder type-delete {}
 
-[Images]
+[08.Images]
 # Remove created images
 list_action = openstack image list
 key = ID
 sweep_action = openstack image delete {}
 
-[SecurityGroups]
+[09.SecurityGroups]
 # Remove created Security Groups
 list_action = openstack security group list --all
 key = ID
 sweep_action = openstack security group delete {}
 
-[KeyPairs]
+[10.KeyPairs]
 # Remove created SSH key pairs
 list_action = openstack keypair list
 key = ID
 sweep_action = openstack keypair delete {}
 
-[Networks]
+[11.Networks]
 # Remove created networks, and its subsidiaries
 action_map = network.subnet.port
 
 network_list_action = openstack network list
-subnet_list_action = openstack subnet list
-port_list_action = openstack port list
 network_key = ID
-subnet_key = ID
-port_key = ID
 network_sweep_action = openstack network delete {}
-subnet_sweep_action = openstack subnet delete {}
-port_sweep_action = openstack port delete {}
 
-[Routers]
+subnet_list_action = openstack subnet list
+subnet_key = ID
+subnet_sweep_action = openstack subnet delete {}
+subnet_child_options = --network {}, network.ID
+
+port_list_action = openstack port list
+port_key = ID
+port_sweep_action = openstack port delete {}
+port_child_options = --network {}, network.ID
+
+[12.Routers]
 # Remove created routers
 list_action = openstack router list
 key = ID
-sweep_action = openstack router delete
+sweep_action = openstack router delete {}
 
-[Regions]
+[13.Regions]
 # Remove created regions
 list_action = openstack region list
 key = ID
 sweep_action = openstack region delete {}
 
-[Stacks]
+[14.Stacks]
 # Remove created heat stacks, include nested
 list_action = openstack stack list --nested
 key = ID
 sweep_action = openstack stack delete -y {}
 
-[Containers]
+[15.Containers]
 # Remove any test containers
 list_action = openstack container list --all
 key = ID
 sweep_action = openstack container delete {}
 
-[Projects]
+[16.Projects]
 # Remove projects, run only if all others were successful
 protected_run = True
 list_action = openstack project list

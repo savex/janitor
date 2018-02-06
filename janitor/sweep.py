@@ -130,37 +130,45 @@ def sweeper_cli():
 
             # Log collected data stats
             if args.stat_only:
-                break
+                continue
             else:
-                for _data_item in _filtered_output:
-                    logger_cli.info("# {}: {}".format(
-                        _count,
-                        _data_item
-                    ))
+                for _data_item in _all_output:
+                    if _data_item in _filtered_output:
+                        logger_cli.info("\t> {}: {}".format(
+                            _count,
+                            _data_item
+                        ))
 
-                    if args.sweep:
-                        # Do sweep actions
-                        rc = sweep.sweep_action(_section, item=_data_item)
-                        if rc != 0:
-                            logger_cli.error("\t({}) '{}'\n\tERROR: {}".format(
-                                rc,
-                                sweep.get_section_sweep_cmd(
-                                    _section,
-                                    _data_item
-                                ),
-                                sweep.get_section_sweep_error(
-                                    _section,
-                                    _data_item
-                                )
-                            ))
-                        else:
-                            logger_cli.info("{}".format(
-                                sweep.get_section_sweep_output(
-                                    _section,
-                                    _data_item
-                                )
-                            ))
-                    _count -= 1
+                        if args.sweep:
+                            # Do sweep actions
+                            rc = sweep.sweep_action(
+                                _section,
+                            )
+                            if rc != 0:
+                                logger_cli.error("\t({}) '{}'\n\tERROR: {}".format(
+                                    rc,
+                                    sweep.get_section_sweep_cmd(
+                                        _section,
+                                        _data_item
+                                    ),
+                                    sweep.get_section_sweep_error(
+                                        _section,
+                                        _data_item
+                                    )
+                                ))
+                            else:
+                                logger_cli.info("{}".format(
+                                    sweep.get_section_sweep_output(
+                                        _section,
+                                        _data_item
+                                    )
+                                ))
+                        _count -= 1
+
+                    else:
+
+                        continue
+
 
     logger_cli.info("\nDone")
     return
