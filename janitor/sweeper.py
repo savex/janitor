@@ -379,13 +379,66 @@ class Sweeper(ConfigFileBase):
 
         return rc
 
-    def list_action(self, section=None):
-        # get data lists for section
-        logger.info("List action started")
-        return self.do_action(
+    def _list_action_runner(self, _section_data, _map, _level):
+        rc = 0
+        # Process next levels
+        _levels = _map.split('.')
+        if len(_levels)-1 > _level:
+            # there is a next level present
+            _next_level = _levels[_level]
+            rc = self._list_action_runner(
+                _section_data[_next_level],
+                _map,
+                _level+1
+            )
+
+        # ...process this level
+        _level_path = " -> ".join(_levels[:_level])
+        logger_cli.info("# {}".format(_level_path))
+
+        # do listing for this section, will produce filtered out
+        rc = self.do_action(
             self._do_list_action,
-            section=section
+            _section_data
         )
+        if rc > 0:
+            logger_cli.warn("##### Failed to list objects")
+            return rc
+
+        # list all filtered 'key' childs and force them to be added as filtered
+        _format = _section_data["output_format"]
+        _key = _section_data["key"]
+        for item in _section_data["filtered_output"]:
+            # iterate key values
+            _value = None
+            if _format == "json":
+                _value = item[_key]
+            elif _format == "raw":
+                _value = item
+
+            dgfdhdgfhj
+            
+            rc = self.do_action(
+                self._do_list_action,
+                _section_data
+            )
+
+        return rc
+
+    def list_action(self, section=None):
+        logger.info("List action started")
+        # if map is present, do child listings as well
+        _map = self.sweep_items[section]["map"]
+        if _map is None:
+            _map = section
+
+        logger_cli.info("# section map is '{}'".format())
+        # do listing using map, child first
+        # process child level
+
+        # get data lists for section
+        rc = self._list_action_runner(self.sweep_items[section], _map, 0)
+        return rc
 
     def _sweep_action_runner(self, _section_data, _map, _level):
         rc = 0
@@ -437,7 +490,7 @@ class Sweeper(ConfigFileBase):
         if _map is None:
             _map = section
 
-        logger_cli.info("# section map is '{}'".format())
+        logger_cli.info("# section map is '{}'".format(_map))
         # do sweep using map, child first
         # process child level
 
