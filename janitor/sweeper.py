@@ -13,6 +13,21 @@ _list_action_label = "list_action"
 _sweep_action_label = "sweep_action"
 
 
+class DataCache(dict):
+    params = {}
+
+    def __getattr__(self, item):
+        try:
+            _value = self.params[item]
+        except KeyError:
+            self.params[item] = DataCache()
+        finally:
+            return self.params[item]
+
+    def __setattr__(self, key, value):
+        self.params[key] = value
+
+
 class Sweeper(ConfigFileBase):
     def __init__(
             self,
@@ -81,6 +96,12 @@ class Sweeper(ConfigFileBase):
             self.default_filter_field
         )
 
+        if len(prefix) > 0:
+            __section_dict["section_name"] = section + " ({})".format(
+                prefix[:-1]
+            )
+        else:
+            __section_dict["section_name"] = section
         __section_dict[_list_action_label] = {}
         __section_dict[_sweep_action_label] = {}
 
@@ -88,6 +109,12 @@ class Sweeper(ConfigFileBase):
         __section_dict[_list_action_label]["output"] = None
         __section_dict[_list_action_label]["error"] = None
         __section_dict[_list_action_label]["return_code"] = None
+
+        __section_dict["action_map"] = self.get_with_default(
+            section,
+            prefix + "action_map",
+            None
+        )
 
         __section_dict["output"] = None
         __section_dict["output_format"] = _output_format
@@ -330,9 +357,9 @@ class Sweeper(ConfigFileBase):
 
         return _filtered
 
-    def do_action(self, action, section=None, **kwargs):
+    def do_action(self, action, _section_data=None, **kwargs):
         rc = 0
-        if section is None:
+        if _section_data is None:
             # Do all actions in order
             _sections = self.sweep_items.keys()
             _sections.sort()
@@ -343,7 +370,8 @@ class Sweeper(ConfigFileBase):
                 _section = _sections[index]
                 _section_data = self.sweep_items[_section]
                 # check if it is eligible to execute action
-                if _section_data["protected"] and \
+                if "protected_run" in _section_data and \
+                        _section_data["protected_run"] and \
                         self.last_return_code != 0:
                     logger_cli.warn(
                         "...dropping protected section due to previous error"
@@ -359,12 +387,6 @@ class Sweeper(ConfigFileBase):
 
             logger.info("...done")
         else:
-            # check if section exists
-            try:
-                _section_data = self.sweep_items[section]
-            except KeyError:
-                raise SectionNotPresent(section, self.profilepath)
-
             # check if it is eligible to execute action
             if _section_data["protected_run"] and \
                     self.last_return_code != 0:
@@ -373,7 +395,7 @@ class Sweeper(ConfigFileBase):
                 )
                 return
 
-            logger.info("-> {}".format(section))
+            logger.info("-> {}".format(_section_data["section_name"]))
             rc = action(_section_data, **kwargs)
             _section_data["last_rc"] = rc
 
@@ -416,8 +438,8 @@ class Sweeper(ConfigFileBase):
             elif _format == "raw":
                 _value = item
 
-            dgfdhdgfhj
-            
+
+
             rc = self.do_action(
                 self._do_list_action,
                 _section_data
@@ -428,11 +450,11 @@ class Sweeper(ConfigFileBase):
     def list_action(self, section=None):
         logger.info("List action started")
         # if map is present, do child listings as well
-        _map = self.sweep_items[section]["map"]
+        _map = self.sweep_items[section]["action_map"]
         if _map is None:
             _map = section
 
-        logger_cli.info("# section map is '{}'".format())
+        logger_cli.info("# section map is '{}'".format(_map))
         # do listing using map, child first
         # process child level
 
@@ -477,20 +499,41 @@ class Sweeper(ConfigFileBase):
 
             rc = self.do_action(
                 self._do_sweep_action,
-                section=_section_data,
+                _section_data=_section_data,
                 item=_data_item
             )
+
+            if rc != 0:
+                logger_cli.error("\t({}) '{}'\n\tERROR: {}".format(
+                    rc,
+                    self.get_section_sweep_cmd(
+                        _section_data["section_name"],
+                        _data_item
+                    ),
+                    self.get_section_sweep_error(
+                        _section_data["section_name"],
+                        _data_item
+                    )
+                ))
+            else:
+                logger_cli.info("{}".format(
+                    self.get_section_sweep_output(
+                        _section_data["section_name"],
+                        _data_item
+                    )
+                ))
+            _count -= 1
 
         return rc
 
     def sweep_action(self, section=None):
         # Do sweep action for data item given, None is handled deeper
         logger.info("Sweep action started")
-        _map = self.sweep_items[section]["map"]
+        _map = self.sweep_items[section]["action_map"]
         if _map is None:
             _map = section
 
-        logger_cli.info("# section map is '{}'".format(_map))
+        logger.info("Section map is '{}'".format(_map))
         # do sweep using map, child first
         # process child level
 

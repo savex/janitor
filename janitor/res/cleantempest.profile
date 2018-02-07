@@ -125,7 +125,7 @@ network_child_list = subnet,port
 subnet_list_action = openstack subnet list
 subnet_key = ID
 subnet_sweep_action = openstack subnet delete {}
-subnet_child_options = --network {}, params.network.ID
+subnet_child_options = --network {}:params.network.ID
 
 port_list_action = openstack port list
 port_key = ID

@@ -3,7 +3,7 @@ import sys
 import argparse
 
 from common import logger, logger_cli
-from janitor.sweeper import Sweeper
+from janitor.sweeper import Sweeper, DataCache
 from utils.exception import SweeperException
 
 pkg_dir = os.path.dirname(__file__)
@@ -132,47 +132,25 @@ def sweeper_cli():
             if args.stat_only:
                 continue
             else:
-                for _data_item in _all_output:
-                    if _data_item in _filtered_output:
-                        logger_cli.info("\t> {}: {}".format(
-                            _count,
-                            _data_item
-                        ))
+                if args.sweep:
+                    # Do sweep actions
+                    rc = sweep.sweep_action(
+                        _section
+                    )
 
-                        if args.sweep:
-                            # Do sweep actions
-                            rc = sweep.sweep_action(
-                                _section,
-                            )
-                            if rc != 0:
-                                logger_cli.error("\t({}) '{}'\n\tERROR: {}".format(
-                                    rc,
-                                    sweep.get_section_sweep_cmd(
-                                        _section,
-                                        _data_item
-                                    ),
-                                    sweep.get_section_sweep_error(
-                                        _section,
-                                        _data_item
-                                    )
-                                ))
-                            else:
-                                logger_cli.info("{}".format(
-                                    sweep.get_section_sweep_output(
-                                        _section,
-                                        _data_item
-                                    )
-                                ))
-                        _count -= 1
-
-                    else:
-
-                        continue
-
+                _count -= 1
 
     logger_cli.info("\nDone")
     return
 
+
+# dt = DataCache()
+# dt.pp = "0123"
+# dt.aa.bb = "111"
+# zz = dt.aa
+#
+# print dt.aa
+# print dt.pp
 # Entry
 if __name__ == '__main__':
     try:
