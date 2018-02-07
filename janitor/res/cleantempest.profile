@@ -53,67 +53,67 @@ key = ID
 # sweep_action = file {0}; tail {0}
 ############
 
-[01.Users]
+[01-Users]
 # Remove users
 list_action = openstack user list
 key = ID
 sweep_action = openstack user delete {}
 
-[02.Roles]
+[02-Roles]
 # Remove roles
 list_action = openstack role list
 key = ID
 sweep_action = openstack role delete {}
 
-[03.Service]
+[03-Service]
 # Remove services
 list_action = openstack service list
 key = ID
 sweep_action = openstack service delete {}
 
-[04.Servers]
+[04-Servers]
 # Remove created instances
 list_action = openstack server list --all
 key = ID
 sweep_action = openstack server delete {}
 
-[05.Snapshots]
+[05-Snapshots]
 # Remove created snapshots
 list_action = cinder snapshot-list --all
 key = ID
 sweep_action = cinder snapshot-reset-state {0}; cinder snapshot-delete {0} --force
 
-[06.Volumes]
+[06-Volumes]
 # Remove created volumes
 list_action = openstack volume list --all
 key = ID
 sweep_action = cinder reset-state {0}; openstack volume delete {0}
 
-[07.VolumeTypes]
+[07-VolumeTypes]
 # Remove created volume types
 list_action = cinder type-list
 key = ID
 sweep_action = cinder type-delete {}
 
-[08.Images]
+[08-Images]
 # Remove created images
 list_action = openstack image list
 key = ID
 sweep_action = openstack image delete {}
 
-[09.SecurityGroups]
+[09-SecurityGroups]
 # Remove created Security Groups
 list_action = openstack security group list --all
 key = ID
 sweep_action = openstack security group delete {}
 
-[10.KeyPairs]
+[10-KeyPairs]
 # Remove created SSH key pairs
 list_action = openstack keypair list
 key = ID
 sweep_action = openstack keypair delete {}
 
-[11.Networks]
+[11-Networks]
 # Remove created networks, and its subsidiaries
 action_map = network.subnet.port
 
@@ -132,31 +132,31 @@ port_key = ID
 port_sweep_action = openstack port delete {}
 port_child_options = --network {}, params.network.ID
 
-[12.Routers]
+[12-Routers]
 # Remove created routers
 list_action = openstack router list
 key = ID
 sweep_action = openstack router delete {}
 
-[13.Regions]
+[13-Regions]
 # Remove created regions
 list_action = openstack region list
 key = ID
 sweep_action = openstack region delete {}
 
-[14.Stacks]
+[14-Stacks]
 # Remove created heat stacks, include nested
 list_action = openstack stack list --nested
 key = ID
 sweep_action = openstack stack delete -y {}
 
-[15.Containers]
+[15-Containers]
 # Remove any test containers
 list_action = openstack container list --all
 key = ID
 sweep_action = openstack container delete {}
 
-[16.Projects]
+[16-Projects]
 # Remove projects, run only if all others were successful
 protected_run = True
 list_action = openstack project list
