@@ -6,26 +6,26 @@ from copy import deepcopy
 from subprocess import Popen, PIPE
 
 from common import logger, logger_cli
+from utils import merge_dict
 from utils.config import ConfigFileBase
-from utils.exception import *
+from utils.exception import FailedToOpenProcess
 
 _list_action_label = "list_action"
 _sweep_action_label = "sweep_action"
 
 
 class DataCache(dict):
-    params = {}
-
     def __getattr__(self, item):
+        d = vars(self)
         try:
-            _value = self.params[item]
+            _value = d[item]
         except KeyError:
-            self.params[item] = DataCache()
-        finally:
-            return self.params[item]
+            _value = d[item] = type(self)()
+
+        return _value
 
     def __setattr__(self, key, value):
-        self.params[key] = value
+        vars(self)[key] = value
 
 
 class Sweeper(ConfigFileBase):
@@ -33,11 +33,14 @@ class Sweeper(ConfigFileBase):
             self,
             filter_regex,
             filepath,
+            bash_action,
             section_name="sweeper",
     ):
         super(Sweeper, self).__init__(section_name, filepath=filepath)
 
         self.profilepath = filepath
+        self.cache = DataCache()
+        self.bash_action = bash_action
 
         # load default values
         self.presort_sections = self.get_value(
@@ -110,12 +113,6 @@ class Sweeper(ConfigFileBase):
         __section_dict[_list_action_label]["error"] = None
         __section_dict[_list_action_label]["return_code"] = None
 
-        __section_dict["action_map"] = self.get_with_default(
-            section,
-            prefix + "action_map",
-            None
-        )
-
         __section_dict["output"] = None
         __section_dict["output_format"] = _output_format
         __section_dict["filter_field"] = _filter_field
@@ -134,44 +131,55 @@ class Sweeper(ConfigFileBase):
 
         return __section_dict
 
-    def _get_child_subsection(self, section, _map, _level):
+    def _get_child(self, section, _map, _level, _dict):
         _levels = _map.split('.')
         _prefix = _levels[_level]
 
-        _this_level_dict = self._get_subsection_properties(
-            section,
-            _prefix + "_"
-        )
-
-        if len(_levels)-1 > _level:
-            _this_level_dict[_levels[_level+1]] = {}
-            _this_level_dict[_levels[_level+1]] = self._get_child_subsection(
+        if len(_levels) - 1 > _level:
+            _dict[_levels[_level + 1]] = {}
+            _dict[_levels[_level + 1]] = self._get_child(
                 section,
                 _map,
-                _level+1
+                _level + 1,
+                _dict[_levels[_level + 1]]
             )
 
-        return _this_level_dict
+        merge_dict(
+            self._get_subsection_properties(
+                section,
+                _prefix + "_"
+            ),
+            _dict
+        )
+
+        return _dict
 
     def _get_properties(self, section):
         # load opton, if nothing is there - None will be returned
         action_map = self.get_safe(section, "action_map")
 
+        _root_section = {}
+
         if action_map is None:
             # No tree parsing, simple dict
-            _section_dict = self._get_subsection_properties(section)
+            _root_section = self._get_subsection_properties(section)
         else:
             # Use map to build action tree
-            _section_dict = self._get_child_subsection(section, action_map, 0)
+            _root_section[action_map.split('.')[0]] = self._get_child(
+                section,
+                action_map,
+                0,
+                {}
+            )
 
-        _protected = self.get_with_default(
+        _root_section["protected_run"] = self.get_with_default(
             section,
             "protected_run",
             self.protected_run_default
         )
-        _section_dict["protected_run"] = _protected
+        _root_section["action_map"] = action_map
 
-        return _section_dict
+        return _root_section
 
     @property
     def sections_list(self):
@@ -209,9 +217,16 @@ class Sweeper(ConfigFileBase):
     def get_section_data(self, section):
         return self.sweep_items[section]["data"]
 
+    def is_section_present(self, section):
+        return True if section in self.sections_list else False
+
     @staticmethod
-    def _action_process(cmd):
+    def _action_process(cmd, test=False):
         logger.debug("...cmd: '{}'".format(cmd))
+        if test:
+            logger_cli.info("{}\n".format(cmd))
+            return
+
         _cmd = cmd.split()
         try:
             sweep_process = Popen(_cmd, stdout=PIPE, stderr=PIPE)
@@ -238,10 +253,13 @@ class Sweeper(ConfigFileBase):
 
     def _do_list_action(self, _section_data):
         # execute the list action
+        cmd = _section_data[_list_action_label]["cmd"]
 
-        _out, _err, _rc = self._action_process(
-            _section_data[_list_action_label]["cmd"]
-        )
+        if self.bash_action == 'list':
+            self._action_process(cmd, test=True)
+            return 0
+
+        _out, _err, _rc = self._action_process(cmd)
 
         # save it
         _section_data[_list_action_label]["output"] = _out
@@ -369,14 +387,6 @@ class Sweeper(ConfigFileBase):
             for index in range(len(_sections)):
                 _section = _sections[index]
                 _section_data = self.sweep_items[_section]
-                # check if it is eligible to execute action
-                if "protected_run" in _section_data and \
-                        _section_data["protected_run"] and \
-                        self.last_return_code != 0:
-                    logger_cli.warn(
-                        "...dropping protected section due to previous error"
-                    )
-                    continue
                 # run action
                 logger.debug("...running action '{}' for section '{}'".format(
                     str(action.__name__),
@@ -387,50 +397,46 @@ class Sweeper(ConfigFileBase):
 
             logger.info("...done")
         else:
-            # check if it is eligible to execute action
-            if _section_data["protected_run"] and \
-                    self.last_return_code != 0:
-                logger_cli.warn(
-                    "...dropping protected section due to previous error"
-                )
-                return
-
             logger.info("-> {}".format(_section_data["section_name"]))
             rc = action(_section_data, **kwargs)
             _section_data["last_rc"] = rc
 
         return rc
 
-    def _list_action_runner(self, _section_data, _map, _level):
+    def _list_action_runner(self, _data, _map, _level):
         rc = 0
         # Process next levels
         _levels = _map.split('.')
-        if len(_levels)-1 > _level:
+        if len(_levels) - 1 > _level:
             # there is a next level present
-            _next_level = _levels[_level]
+            _next_level = _levels[_level+1]
             rc = self._list_action_runner(
-                _section_data[_next_level],
+                _data[_next_level],
                 _map,
-                _level+1
+                _level + 1
             )
 
-        # ...process this level
-        _level_path = " -> ".join(_levels[:_level])
-        logger_cli.info("# {}".format(_level_path))
+        if len(_levels) > 1:
+            # ...process this level
+            _level_path = " -> ".join(_levels[:_level+1])
+            logger_cli.debug("## {}".format(_level_path))
 
         # do listing for this section, will produce filtered out
         rc = self.do_action(
             self._do_list_action,
-            _section_data
+            _data
         )
+
         if rc > 0:
             logger_cli.warn("##### Failed to list objects")
             return rc
+        elif self.bash_action == "list":
+            return rc
 
         # list all filtered 'key' childs and force them to be added as filtered
-        _format = _section_data["output_format"]
-        _key = _section_data["key"]
-        for item in _section_data["filtered_output"]:
+        _format = _data["output_format"]
+        _key = _data["key"]
+        for item in _data["filtered_output"]:
             # iterate key values
             _value = None
             if _format == "json":
@@ -438,42 +444,55 @@ class Sweeper(ConfigFileBase):
             elif _format == "raw":
                 _value = item
 
-
+            # do something with value
+            pass
 
             rc = self.do_action(
                 self._do_list_action,
-                _section_data
+                _data
             )
 
         return rc
 
     def list_action(self, section=None):
-        logger.info("List action started")
         # if map is present, do child listings as well
         _map = self.sweep_items[section]["action_map"]
         if _map is None:
+            logger_cli.debug("## no action map")
             _map = section
+            _data = self.sweep_items[section]
 
-        logger_cli.info("# section map is '{}'".format(_map))
+        else:
+            logger_cli.debug("## action map is '{}'".format(_map))
+            _data = self.sweep_items[section][_map.split('.')[0]]
+
         # do listing using map, child first
         # process child level
 
         # get data lists for section
-        rc = self._list_action_runner(self.sweep_items[section], _map, 0)
-        return rc
+        # check if it is eligible to execute action
+        if self.sweep_items[section]["protected_run"] \
+                and self.last_return_code != 0:
+            logger_cli.warn(
+                "# WARN: ...dropping protected section due to previous error"
+            )
+            return 0
+
+        logger_cli.debug("## list action started")
+        return self._list_action_runner(_data, _map, 0)
 
     def _sweep_action_runner(self, _section_data, _map, _level):
         rc = 0
         # Process next levels
         _levels = _map.split('.')
 
-        if len(_levels)-1 > _level:
+        if len(_levels) - 1 > _level:
             # there is a next level present
             _next_level = _levels[_level]
             rc = self._sweep_action_runner(
                 _section_data[_next_level],
                 _map,
-                _level+1
+                _level + 1
             )
 
         # ...process this level
@@ -533,7 +552,7 @@ class Sweeper(ConfigFileBase):
         if _map is None:
             _map = section
 
-        logger.info("Section map is '{}'".format(_map))
+        logger_cli.debug("# section map is '{}'".format(_map))
         # do sweep using map, child first
         # process child level
 

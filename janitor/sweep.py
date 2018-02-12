@@ -1,10 +1,11 @@
+import argparse
 import os
 import sys
-import argparse
+import traceback
 
+import janitor
 from common import logger, logger_cli
-from janitor.sweeper import Sweeper, DataCache
-from utils.exception import SweeperException
+from janitor.sweeper import Sweeper
 
 pkg_dir = os.path.dirname(__file__)
 pkg_dir = os.path.normpath(pkg_dir)
@@ -56,6 +57,12 @@ def sweeper_cli():
     )
 
     parser.add_argument(
+        "--bash-action",
+        default=None,
+        help="Generate bash commands for 'action'. Options: 'list', 'sweep'"
+    )
+
+    parser.add_argument(
         "-f",
         "--filter-regex",
         default=None, help="Overide profile default filter"
@@ -91,7 +98,11 @@ def sweeper_cli():
         sys.exit(1)
 
     # Load profile
-    sweep = Sweeper(args.filter_regex, args.profile)
+    sweep = Sweeper(
+        args.filter_regex,
+        args.profile,
+        args.bash_action
+    )
     logger_cli.info("### {}".format(sweep.banner))
     _sections = []
 
@@ -110,7 +121,16 @@ def sweeper_cli():
     # do main flow
     while len(_sections) > 0:
         _section = _sections.pop(0)
-        logger_cli.info("\n# {}".format(_section))
+        # check if section is present in profile
+        if not sweep.is_section_present(_section):
+            logger_cli.error("# !!! Section'{}' not present in '{}'".format(
+                _section,
+                args.profile
+            ))
+            continue
+
+        # Execute as usual
+        logger_cli.info("\n### {}".format(_section))
         # Collect all data
         rc = sweep.list_action(_section)
         if rc != 0:
@@ -119,7 +139,7 @@ def sweeper_cli():
                 sweep.get_section_list_cmd(_section),
                 sweep.get_section_list_error(_section)
             ))
-        else:
+        elif args.bash_action not in [None, 'list']:
             _all_output = sweep.get_section_output(_section)
             _filtered_output = sweep.get_section_filtered_output(_section)
             _count = len(_filtered_output)
@@ -143,19 +163,13 @@ def sweeper_cli():
     logger_cli.info("\nDone")
     return
 
-
-# dt = DataCache()
-# dt.pp = "0123"
-# dt.aa.bb = "111"
-# zz = dt.aa
-#
-# print dt.aa
-# print dt.pp
 # Entry
 if __name__ == '__main__':
     try:
         sweeper_cli()
-    except SweeperException as err:
-        logger_cli.error("{}".format(err))
+    except janitor.utils.exception.SweeperException as e:
+        for line in traceback.format_exc().splitlines():
+            logger.error("{}".format(line))
+        logger_cli.error("ERROR: {}".format(e))
         sys.exit(1)
     sys.exit(0)

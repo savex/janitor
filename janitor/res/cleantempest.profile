@@ -1,6 +1,6 @@
 [sweeper]
 # Announcement
-banner = "Starting tempest/rally cleaning."
+banner = "Cleaning profile for tempest/rally"
 
 # sort sections before use
 presort_sections = True
