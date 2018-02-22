@@ -120,9 +120,9 @@ class Sweeper(ConfigFileBase):
         __section_dict["data"] = None
         __section_dict["last_rc"] = 0
         __section_dict["key"] = self._config.get(section, prefix + "key")
-        __section_dict["child_options"] = self.get_with_default(
+        __section_dict["as_child_options"] = self.get_with_default(
             section,
-            prefix + "child_options",
+            prefix + "as_child_options",
             None
         )
 
@@ -221,11 +221,28 @@ class Sweeper(ConfigFileBase):
         return True if section in self.sections_list else False
 
     @staticmethod
+    def get_data_item(_frmt, item, key=None):
+        if _frmt == "json":
+            return item[key]
+        elif _frmt == "raw":
+            return item
+        else:
+            return None
+
+    @staticmethod
+    def get_cache_key_name(data):
+        _frmt = data["output_format"]
+        if _frmt == "json":
+            return "item." + data["section_name"] + "." + data["key"]
+        elif _frmt == "raw":
+            return "item." + data["section_name"] + ".raw"
+
+    @staticmethod
     def _action_process(cmd, test=False):
         logger.debug("...cmd: '{}'".format(cmd))
         if test:
             logger_cli.info("{}\n".format(cmd))
-            return
+            return None, None, 0
 
         _cmd = cmd.split()
         try:
@@ -251,59 +268,45 @@ class Sweeper(ConfigFileBase):
         )
         return _output, _err, _rc
 
-    def _do_list_action(self, _section_data):
+    def _do_list_action(
+            self,
+            cmd,
+            expected_format=None,
+            use_filter=False,
+            filter_key=None
+    ):
         # execute the list action
-        cmd = _section_data[_list_action_label]["cmd"]
-
         if self.bash_action == 'list':
-            self._action_process(cmd, test=True)
-            return 0
-
-        _out, _err, _rc = self._action_process(cmd)
-
-        # save it
-        _section_data[_list_action_label]["output"] = _out
-        _section_data[_list_action_label]["error"] = _err
-        _section_data[_list_action_label]["return_code"] = _rc
+            _out, _err, _rc = self._action_process(cmd, test=True)
+            return _rc, _out, None
+        else:
+            _out, _err, _rc = self._action_process(cmd)
 
         # Handle result
+        _data, _filtered = None, None
         if _rc != 0:
             logger.debug("Non-zero exit code returned. No data will be saved")
         else:
             # parse data and
             # filter it according to selected type
-            _data, _filtered = None, None
-            _format = _section_data["output_format"]
-            if _format == "json":
+            if expected_format == "json":
                 _data = json.loads(_out)
-                _filtered = self._filter_json(
-                    _data,
-                    _section_data["filter_field"]
-                )
-            elif _format == "raw":
+                if use_filter:
+                    _filtered = self._filter_json(
+                        _data,
+                        filter_key
+                    )
+            else:
                 _data = _out.splitlines()
-                _filtered = self._filter_raw(_data)
-            _section_data["output"] = _data
-            _section_data["filtered_output"] = _filtered
+                if use_filter:
+                    _filtered = self._filter_raw(_data)
 
-        return _rc
+        return _rc, _data, _filtered
 
-    def _do_sweep_action(self, _section_data, item=None):
-        # execute the sweep action with 'item' as a format param
-        if item is None:
-            logger.warn(
-                "Empty item supplied. Sweep action ignored '{}'.".format(
-                    _section_data[_sweep_action_label]["cmd"]
-                )
-            )
-            return
+    def _do_sweep_action(self, cmd):
+        logger_cli.debug("+ '{}'".format(cmd))
 
-        logger.debug("Sweep action for item '{}'".format(item))
-        _cmd = _section_data[_sweep_action_label]["cmd"]
-        _cmd = _cmd.format(item)
-        logger_cli.debug("+ '{}'".format(_cmd))
-
-        _out, _err, _rc = self._action_process(_cmd)
+        _out, _err, _rc = self._action_process(cmd)
 
         # handle specific RC
         # _rc = 1
@@ -322,19 +325,11 @@ class Sweeper(ConfigFileBase):
                 )
 
                 sleep(self.retry_timeout / 1000)
-                _out, _err, _rc = self._action_process(_cmd)
+                _out, _err, _rc = self._action_process(cmd)
 
                 _retry_left -= 1
 
-        # store
-        _pool = _section_data[_sweep_action_label]["pool"]
-        _pool[item] = {}
-        _pool[item]["item_cmd"] = _cmd
-        _pool[item]["item_output"] = _out
-        _pool[item]["item_error"] = _err
-        _pool[item]["item_return_code"] = _rc
-
-        return _rc
+        return _rc, cmd, _out, _err
 
     def _do_matching(self, unfiltered):
         logger.debug("About to apply filter for '{}'".format(unfiltered))
@@ -375,56 +370,101 @@ class Sweeper(ConfigFileBase):
 
         return _filtered
 
-    def do_action(self, action, _section_data=None, **kwargs):
-        rc = 0
-        if _section_data is None:
-            # Do all actions in order
-            _sections = self.sweep_items.keys()
-            _sections.sort()
-            logger.info("...{} sections total".format(_sections.__len__()))
+    @staticmethod
+    def do_action(action, cmd, **kwargs):
+        # TODO: use gevent to generate subprocess
+        logger.info("Running '{}'. CMD:'{}', ARGS:'{}'".format(
+            action,
+            cmd,
+            kwargs
+        ))
 
-            # TODO: use gevent to generate subprocess
-            for index in range(len(_sections)):
-                _section = _sections[index]
-                _section_data = self.sweep_items[_section]
-                # run action
-                logger.debug("...running action '{}' for section '{}'".format(
-                    str(action.__name__),
-                    _section
-                ))
-                rc = action(_section, **kwargs)
-                _section_data["last_rc"] = rc
+        return action(cmd, **kwargs)
 
-            logger.info("...done")
+    def _get_map_for_section(self, section):
+        _map = self.sweep_items[section]["action_map"]
+        if _map is None:
+            logger_cli.debug("## no action map")
+            _map = section
+            _data = self.sweep_items[section]
         else:
-            logger.info("-> {}".format(_section_data["section_name"]))
-            rc = action(_section_data, **kwargs)
-            _section_data["last_rc"] = rc
+            logger_cli.debug("## action map is '{}'".format(_map))
+            _map = _map.split('.')
+            # extract data for root level right away
+            _data = self.sweep_items[section][_map[0]]
 
-        return rc
+        return _map, _data
+
+    @staticmethod
+    def _format_variables(format_string, cache):
+        # fill in var values from cache
+        _format_list = format_string.split(':')
+        _vars = ()
+        for var in _format_list[1].split(','):
+            _vars += cache.__getattr__(var)
+        _formatted = _format_list[0].format(_vars)
+        return _formatted
+
+    def _do_list_as_child(self, data, _map, level, cache):
+        # get all items on this level for supplied options
+
+        _cmd = data[_list_action_label]["cmd"]
+        _options = self._format_variables(data["as_child_options"], cache)
+        cmd = _cmd + " " + _options
+
+        _items = self.do_action(
+            self._do_list_action,
+            cmd,
+            expected_format=data["output_format"]
+        )
+
+        data["sweep_items"].extend(_items)
+
+        # Process next levels
+        if len(_map) - 1 > level:
+            # there is a next level present
+            _next_level = _map[level + 1]
+            for item in _items:
+                _item = self.get_data_item(
+                    data["output_format"],
+                    item,
+                    key=data["key"]
+                )
+                cache.__setattr__(
+                    self.get_cache_key_name(data),
+                    _item
+                )
+                self._do_list_as_child(
+                    data[_next_level],
+                    _map,
+                    level + 1,
+                    cache
+                )
 
     def _list_action_runner(self, _data, _map, _level):
-        rc = 0
         # Process next levels
-        _levels = _map.split('.')
-        if len(_levels) - 1 > _level:
+        if len(_map) - 1 > _level:
             # there is a next level present
-            _next_level = _levels[_level+1]
-            rc = self._list_action_runner(
+            _next_level = _map[_level + 1]
+            self._list_action_runner(
                 _data[_next_level],
                 _map,
                 _level + 1
             )
 
-        if len(_levels) > 1:
-            # ...process this level
-            _level_path = " -> ".join(_levels[:_level+1])
-            logger_cli.debug("## {}".format(_level_path))
-
         # do listing for this section, will produce filtered out
-        rc = self.do_action(
+        # prepare cmd and options
+        _cmd = _data[_list_action_label]["cmd"]
+        _format = _data["output_format"]
+        _filter_key = _data["filter_field"]
+
+        # run initial action with filter
+        rc, output, filtered = self.do_action(
             self._do_list_action,
-            _data
+            _cmd,
+            expected_format=_format,
+            use_filter=True,
+            filter_key=_filter_key
         )
 
         if rc > 0:
@@ -433,38 +473,39 @@ class Sweeper(ConfigFileBase):
         elif self.bash_action == "list":
             return rc
 
-        # list all filtered 'key' childs and force them to be added as filtered
-        _format = _data["output_format"]
-        _key = _data["key"]
-        for item in _data["filtered_output"]:
-            # iterate key values
-            _value = None
-            if _format == "json":
-                _value = item[_key]
-            elif _format == "raw":
-                _value = item
+        if len(_map) > 1:
+            # ...process this level
+            _level_path = " -> ".join(_map[:_level + 1])
+            logger_cli.debug("## {}".format(_level_path))
 
-            # do something with value
-            pass
 
-            rc = self.do_action(
-                self._do_list_action,
-                _data
-            )
+            # list all filtered 'key' childs
+            # and force them to be added as filtered
+            _key = _data["key"]
+            for item in filtered:
+                # iterate key values
+                _value = self.get_data_item(_format, item, _key)
+
+                cache = DataCache()
+                cache.__setattr__(
+                    self.get_cache_key_name(_data),
+                    _value
+                )
+
+                self._do_list_as_child(_data, _map,_level, cache)
+
+                _data["sweep_items"].append(item)
+
+        _data["output"] = output
+        _data["filtered_output"] = filtered
 
         return rc
 
     def list_action(self, section=None):
-        # if map is present, do child listings as well
-        _map = self.sweep_items[section]["action_map"]
-        if _map is None:
-            logger_cli.debug("## no action map")
-            _map = section
-            _data = self.sweep_items[section]
+        logger_cli.debug("## list action started")
 
-        else:
-            logger_cli.debug("## action map is '{}'".format(_map))
-            _data = self.sweep_items[section][_map.split('.')[0]]
+        # if map is present, do child listings as well
+        _map, _data = self._get_map_for_section(section)
 
         # do listing using map, child first
         # process child level
@@ -477,67 +518,90 @@ class Sweeper(ConfigFileBase):
                 "# WARN: ...dropping protected section due to previous error"
             )
             return 0
-
-        logger_cli.debug("## list action started")
+        _data["sweep_items"] = []
         return self._list_action_runner(_data, _map, 0)
 
-    def _sweep_action_runner(self, _section_data, _map, _level):
-        rc = 0
-        # Process next levels
-        _levels = _map.split('.')
+    def _sweep_action_runner(self, data, _map, _level, cache=None):
+        # At this point, we should have
+        # all of the items in filtered ready for sweep.
+        _name = data["section_name"]
+        _format = data["output_format"]
+        _tab_space = "\t" * (_level + 1)
 
-        if len(_levels) - 1 > _level:
+        # announce section
+        logger_cli.info("{}==> '{}'".format(_tab_space, _name))
+
+        # Run next levels first
+        if len(_map) - 1 > _level:
             # there is a next level present
-            _next_level = _levels[_level]
-            rc = self._sweep_action_runner(
-                _section_data[_next_level],
+            _next_level = _map[_level + 1]
+            self._list_action_runner(
+                data[_next_level],
                 _map,
                 _level + 1
             )
 
-        # ...process this level
-        _level_path = " -> ".join(_levels[:_level])
-        logger_cli.info("# {}".format(_level_path))
-        # this section options
-        _format = _section_data["output_format"]
-        _filtered_output = _section_data["filtered_output"]
-        _key = _section_data["key"]
-        # iterate it
-        _count = len(_filtered_output)
-        for item in _filtered_output:
-            _data_item = None
-            if _format == "json":
-                _data_item = item[_key]
-            elif _format == "raw":
-                _data_item = item
+        # At this point, we should have
+        # all of the items in filtered ready for sweep.
+        _name = data["section_name"]
+        _format = data["output_format"]
 
-            logger_cli.info("\t> {}: {}".format(
-                _count,
-                _data_item
-            ))
+        # get cmd for this section
+        _cmd = data[_sweep_action_label]["cmd"]
+
+        # key for this section to load from 'item'
+        _key = data["key"]
+
+        # Take item from filtered
+        _count = len(data["sweep_items"])
+        for _data_item in data["sweep_items"]:
+            if _format == "json":
+                logger_cli.info("\t> {}: {}".format(_count, _data_item[_key]))
+                # handle parameter in cmd using format
+                _cmd.format(_data_item[_key])
+            elif _format == "raw":
+                # show item in processing
+                logger_cli.info("\t> {}: {}".format(_count, _data_item))
+                # handle parameter in cmd using format
+                _cmd.format(_data_item)
+
+            _formatted_cmd = self._format_variables(_cmd, _cache)
+
+            # then execute sweep on this level
+            rc, cmd, output, error = self.do_action(
+                self._do_sweep_action,
+                _cmd,
+            )
+
+            # store
+            _pool = data["pool"]
+            _pool[_data_item] = {}
+            _pool[_data_item]["item_cmd"] = cmd
+            _pool[_data_item]["item_output"] = output
+            _pool[_data_item]["item_error"] = error
+            _pool[_data_item]["item_return_code"] = rc
 
             rc = self.do_action(
                 self._do_sweep_action,
-                _section_data=_section_data,
-                item=_data_item
+                _cmd
             )
 
             if rc != 0:
                 logger_cli.error("\t({}) '{}'\n\tERROR: {}".format(
                     rc,
                     self.get_section_sweep_cmd(
-                        _section_data["section_name"],
+                        _name,
                         _data_item
                     ),
                     self.get_section_sweep_error(
-                        _section_data["section_name"],
+                        _name,
                         _data_item
                     )
                 ))
             else:
                 logger_cli.info("{}".format(
                     self.get_section_sweep_output(
-                        _section_data["section_name"],
+                        data["section_name"],
                         _data_item
                     )
                 ))
@@ -547,16 +611,10 @@ class Sweeper(ConfigFileBase):
 
     def sweep_action(self, section=None):
         # Do sweep action for data item given, None is handled deeper
-        logger.info("Sweep action started")
-        _map = self.sweep_items[section]["action_map"]
-        if _map is None:
-            _map = section
+        logger_cli.debug("## sweep action started")
 
-        logger_cli.debug("# section map is '{}'".format(_map))
-        # do sweep using map, child first
-        # process child level
+        # if map is present, do child listings as well
+        _map, _data = self._get_map_for_section(section)
 
         # sweep it
-        rc = self._sweep_action_runner(self.sweep_items[section], _map, 0)
-
-        return rc
+        return self._sweep_action_runner(self.sweep_items[section], _map, 0)

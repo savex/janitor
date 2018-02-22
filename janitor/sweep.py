@@ -139,7 +139,7 @@ def sweeper_cli():
                 sweep.get_section_list_cmd(_section),
                 sweep.get_section_list_error(_section)
             ))
-        elif args.bash_action not in [None, 'list']:
+        elif args.bash_action not in ['list']:
             _all_output = sweep.get_section_output(_section)
             _filtered_output = sweep.get_section_filtered_output(_section)
             _count = len(_filtered_output)

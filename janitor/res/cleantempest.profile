@@ -119,18 +119,17 @@ action_map = network.subnet.port
 
 network_list_action = openstack network list
 network_key = ID
-network_sweep_action = openstack network delete {}
-network_child_list = subnet,port
+network_sweep_action = openstack network delete {}:item.network.ID
 
 subnet_list_action = openstack subnet list
 subnet_key = ID
-subnet_sweep_action = openstack subnet delete {}
-subnet_child_options = --network {}:params.network.ID
+subnet_sweep_action = openstack subnet delete {}:item.subnet.ID
+subnet_as_child_options = --network {}:item.network.ID
 
 port_list_action = openstack port list
 port_key = ID
-port_sweep_action = openstack port delete {}
-port_child_options = --network {}, params.network.ID
+port_sweep_action = openstack port delete {}:item.port.ID
+port_as_child_options = --network {}:item.network.ID
 
 [12-Routers]
 # Remove created routers
