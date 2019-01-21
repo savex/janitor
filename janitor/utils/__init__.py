@@ -1,6 +1,7 @@
 import file
 import config
 import logger
+import exception
 
 file_utils = file
 logger = logger
@@ -22,6 +23,9 @@ def merge_dict(source, destination):
                 'number' : '5'
             }}}
     True
+
+    :param source: source dict
+    :param destination: second dict and also resulting one
     """
     for key, value in source.items():
         if isinstance(value, dict):
